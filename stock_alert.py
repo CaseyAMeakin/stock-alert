@@ -51,7 +51,7 @@ if __name__ == "__main__":
 
     sym = 'TSLA'
     quote_type = 'b'
-    number = '15208696038'
+    number = '15555555555'
     trigger_value = 227.0
     nexmo_texter = NexmoTexter()
     quote_check_time_sec = 10.
