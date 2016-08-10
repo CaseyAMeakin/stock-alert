@@ -4,8 +4,11 @@ import time, datetime
 import csv
 
 
-# TODO: encapsulate as a stock alert class so that multiple
-# alerts can be created and set running.
+# TODOs:
+# - encapsulate as a stock alert class so that multiple
+#   alerts can be created and set running.
+# - update quote with closer to realtime data (yahoo seems to be
+#   delayed 15 minutes)
 
 
 def get_quote(sym, quote_type):
@@ -22,7 +25,6 @@ def get_quote(sym, quote_type):
 
 
 class NexmoTexter(object):
-
     def __init__(self, credfile='.nexmo_creds'):
         self.__get_nexmo_creds(credfile)
 
