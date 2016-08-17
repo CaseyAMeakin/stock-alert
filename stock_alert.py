@@ -1,3 +1,4 @@
+from threading import Thread, Event
 import httplib
 import sys
 import time, datetime
@@ -5,27 +6,43 @@ import csv
 
 
 # TODOs:
-# - encapsulate as a stock alert class so that multiple
-#   alerts can be created and set running.
-# - update quote with closer to realtime data (yahoo seems to be
-#   delayed 15 minutes)
+# - update quote with closer to realtime data (yahoo is delayed 15 minutes)
+# - wrap stock alert class in thread event handling more cleanly, I don't like
+#   the current dependence in the start() method
 
+class YahooDelayedTicker(object):
+    def __init__(self, sym, quote_type):
+        self.__VALID_QUOTE_TYPES = ['b','a']
+        self.__YAHOO_FINANCE_API = 'download.finance.yahoo.com'
+        self.__validate_quote_type(quote_type)
+        self.__quote_type = quote_type
+        self.__sym = sym
+        self.__req_type = 'GET'
+        self.__req = self.__generate_get_request()
 
-def get_quote(sym, quote_type):
-    VALID_QUOTE_TYPES = ['b','a']
-    YAHOO_FINANCE_API = 'download.finance.yahoo.com'
-    REQ = {}
-    REQ['type'] = 'GET'
-    REQ['data'] = """/d/quotes.csv?s={0}&f={1}""".format(sym, quote_type)
-    conn = httplib.HTTPConnection(YAHOO_FINANCE_API)
-    conn.request(REQ['type'],REQ['data'])
-    data = float(conn.getresponse().read().strip())
-    conn.close()
-    return data
+    def get_quote(self):
+        return float(self.__make_request().strip())
+
+    def sym(self):
+        return self.__sym
+
+    def __validate_quote_type(self, quote_type):
+        if quote_type not in self.__VALID_QUOTE_TYPES:
+            raise ValueError('quote_type must be a string with value "b" or "a"')
+
+    def __generate_get_request(self):
+        return """/d/quotes.csv?s={0}&f={1}""".format(self.__sym, self.__quote_type)
+
+    def __make_request(self):
+        conn = httplib.HTTPConnection(self.__YAHOO_FINANCE_API)
+        conn.request(self.__req_type, self.__req)
+        res = conn.getresponse().read()
+        conn.close()
+        return res
 
 
 class NexmoTexter(object):
-    def __init__(self, credfile='.nexmo_creds'):
+    def __init__(self, credfile):
         self.__get_nexmo_creds(credfile)
 
     def __get_nexmo_creds(self, filename):
@@ -35,7 +52,7 @@ class NexmoTexter(object):
             self.__API_KEY = data[1]
             self.__API_SECRET = data[2]
 
-    def send_alert(self, number, message):
+    def send_alert(self, number, message, exit_after=False):
         NEXMO_HOST = 'rest.nexmo.com'
         REQ = {}
         REQ['type'] = 'GET'
@@ -43,29 +60,79 @@ class NexmoTexter(object):
             self.__API_KEY, self.__API_SECRET, self.FROM_NUMBER, number, message)
         conn = httplib.HTTPSConnection(NEXMO_HOST)
         conn.request(REQ['type'],REQ['data'])
-        response = conn.getresponse() # response.status, response.reason
+        response = conn.getresponse() # response.status, response.reason -- TODO: check response code
         conn.close()
-        sys.stderr.write("Alert sent, exiting.\n")
-        sys.exit(0)
+        if exit_after:
+            sys.stderr.write("Alert sent, exiting.\n")
+            sys.exit(0)
+
+
+class StockAlert(object):
+    def __init__(self, opts):
+        self.__trigger_value = opts['trigger_value']
+        self.__texter = opts['texter']
+        self.__sym = opts['sym']
+        self.__quote_type = opts['quote_type']
+        self.__ticker_interval_sec = opts['ticker_interval_sec']
+        self.__ticker = opts['ticker'](self.__sym, self.__quote_type)
+        self.__phone_number = opts['phone_number']
+
+    def start(self, run_event=Event()):
+        run_event.set()
+        while run_event.is_set():
+            quote_data = self.__ticker.get_quote()
+            message = self.__formatted_quote_data(quote_data)
+            sys.stderr.write(message + "\n")
+            if self.__check_trigger(quote_data):
+                self.__texter.send_alert(self.__phone_number, message, exit_after=True)
+            time.sleep(self.__ticker_interval_sec)
+
+    def __formatted_quote_data(self, quote_data):
+        date_str = datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d+%H:%M:%S')
+        return """STOCK+ALERT:+{0}+{1}+{2}+{3}+{4}""".format(
+            self.__sym, self.__quote_type, self.__trigger_value, quote_data, date_str)
+
+    def __check_trigger(self, quote_data):
+        return ((self.__quote_type == 'b' and quote_data > self.__trigger_value) or
+                (self.__quote_type == 'a' and quote_data < self.__trigger_value))
+
+
+def run_until_keyboard_interrupt(threads, run_events):
+    HR_IN_SEC = 3600.
+    for thread in threads: thread.start()
+    try:
+        while True:
+            time.sleep(HR_IN_SEC)
+    except KeyboardInterrupt:
+        sys.stderr.write("keyboard interrupt: killing threads...\n")
+        for event in run_events: event.clear()
+        for thread in threads: thread.join()
+        sys.stderr.write("threads terminated\n")
 
 
 if __name__ == "__main__":
+    # init opts dict
+    opts = dict( ticker = YahooDelayedTicker,
+                 quote_type = 'b',
+                 ticker_interval_sec = 10.0,
+                 texter = NexmoTexter('/Users/casey/.nexmo_creds'),
+                 phone_number = '15208696038', default = None )
 
-    sym = 'TSLA'
-    quote_type = 'b'
-    number = '15555555555'
-    trigger_value = 227.0
-    nexmo_texter = NexmoTexter()
-    quote_check_time_sec = 10.
+    stock_alerts = []
 
-    while(True):
-        quote_data = get_quote(sym, quote_type)
-        date_str = datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d+%H:%M:%S')
-        message = """STOCK+ALERT:+{0}+{1}+{2}+{3}+{4}""".format(
-            sym, quote_type, trigger_value, quote_data, date_str)
-        sys.stderr.write(message + "\n")
-        if quote_type == 'b' and quote_data > trigger_value:
-            nexmo_texter.send_alert(number, message)
-        elif quote_type == 'a' and quote_data < trigger_value:
-            nexmo_texter.send_alert(number, message)
-        time.sleep(quote_check_time_sec)
+    # tsla alert instance
+    opts['sym'] = 'tsla'
+    opts['trigger_value'] = 227.0
+    stock_alerts.append(StockAlert(opts))
+
+    # aapl alert instance
+    opts['sym'] = 'aapl'
+    opts['trigger_value'] = 200.0
+    stock_alerts.append(StockAlert(opts))
+
+    # create threads
+    run_events = map(lambda x: Event(), stock_alerts)
+    threads = map(lambda x: Thread(target=x[0].start, args = (x[1],)), zip(stock_alerts, run_events))
+
+    run_until_keyboard_interrupt(threads, run_events)
+    sys.stderr.write('exiting\n')
