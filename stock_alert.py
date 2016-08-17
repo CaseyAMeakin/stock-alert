@@ -52,7 +52,7 @@ class NexmoTexter(object):
             self.__API_KEY = data[1]
             self.__API_SECRET = data[2]
 
-    def send_alert(self, number, message, exit_after=False):
+    def send_alert(self, number, message):
         NEXMO_HOST = 'rest.nexmo.com'
         REQ = {}
         REQ['type'] = 'GET'
@@ -62,9 +62,6 @@ class NexmoTexter(object):
         conn.request(REQ['type'],REQ['data'])
         response = conn.getresponse() # response.status, response.reason -- TODO: check response code
         conn.close()
-        if exit_after:
-            sys.stderr.write("Alert sent, exiting.\n")
-            sys.exit(0)
 
 
 class StockAlert(object):
@@ -84,7 +81,9 @@ class StockAlert(object):
             message = self.__formatted_quote_data(quote_data)
             sys.stderr.write(message + "\n")
             if self.__check_trigger(quote_data):
-                self.__texter.send_alert(self.__phone_number, message, exit_after=True)
+                self.__texter.send_alert(self.__phone_number, message)
+                sys.stderr.write("Alert sent, exiting.\n")
+                sys.exit(0)
             time.sleep(self.__ticker_interval_sec)
 
     def __formatted_quote_data(self, quote_data):
@@ -114,9 +113,9 @@ if __name__ == "__main__":
     # init opts dict
     opts = dict( ticker = YahooDelayedTicker,
                  quote_type = 'b',
-                 ticker_interval_sec = 10.0,
+                 ticker_interval_sec = 1.0,
                  texter = NexmoTexter('/Users/casey/.nexmo_creds'),
-                 phone_number = '15208696038', default = None )
+                 phone_number = '15555555555', default = None )
 
     stock_alerts = []
 
@@ -127,7 +126,7 @@ if __name__ == "__main__":
 
     # aapl alert instance
     opts['sym'] = 'aapl'
-    opts['trigger_value'] = 200.0
+    opts['trigger_value'] = 120.0
     stock_alerts.append(StockAlert(opts))
 
     # create threads
