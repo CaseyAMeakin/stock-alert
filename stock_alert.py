@@ -5,9 +5,13 @@ import time, datetime
 import csv
 from bs4 import BeautifulSoup
 
+
 # TODOs:
-# - wrap stock alert class in thread event handling more cleanly, I don't like
-#   the current dependence in the start() method
+#
+# - remove multi-threading (launch as individual processes instead)
+# - add command line options
+# - abstract a GET request class for the tickers and texter
+#
 
 
 class GoogleFinanceTicker(object):
