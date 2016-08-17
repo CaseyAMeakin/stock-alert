@@ -3,12 +3,45 @@ import httplib
 import sys
 import time, datetime
 import csv
-
+from bs4 import BeautifulSoup
 
 # TODOs:
-# - update quote with closer to realtime data (yahoo is delayed 15 minutes)
 # - wrap stock alert class in thread event handling more cleanly, I don't like
 #   the current dependence in the start() method
+
+
+class GoogleFinanceTicker(object):
+    """
+    Real time price data scraped from Google Finance
+    """
+    def __init__(self, sym, quote_type):
+        self.__bs4_parser = 'lxml'
+        self.__GOOGLE_FINANCE_API = 'www.google.com'
+        self.__sym = sym
+
+    def get_quote(self):
+        print float(self.__extract_price_string_from_html())
+
+    def __generate_get_request(self):
+        return """/finance?q={0}""".format(self.__sym)
+
+    def __make_request(self):
+        conn = httplib.HTTPConnection(self.__GOOGLE_FINANCE_API)
+        req = self.__generate_get_request()
+        conn.request('GET',req)
+        res = conn.getresponse().read()
+        conn.close()
+        return res
+
+    def __extract_price_string_from_html(self):
+        try:
+            parsed_html = BeautifulSoup(self.__make_request(),self.__bs4_parser)
+            price_data = parsed_html.body.find('div', attrs={'id':'price-panel'}).text.split()[0]
+        except Exception as e:
+            sys.stderr.write("Error: html parsing error\n")
+            raise
+        return price_data
+
 
 class YahooDelayedTicker(object):
     def __init__(self, sym, quote_type):
@@ -111,7 +144,7 @@ def run_until_keyboard_interrupt(threads, run_events):
 
 if __name__ == "__main__":
     # init opts dict
-    opts = dict( ticker = YahooDelayedTicker,
+    opts = dict( ticker = GoogleFinanceTicker, #YahooDelayedTicker,
                  quote_type = 'b',
                  ticker_interval_sec = 1.0,
                  texter = NexmoTexter('/Users/casey/.nexmo_creds'),
