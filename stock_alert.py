@@ -19,7 +19,7 @@ class GoogleFinanceTicker(object):
     Real time price data scraped from Google Finance
     """
     def __init__(self, sym, quote_type):
-        self.__bs4_parser = 'lxml'
+        self.__bs4_parser = 'html.parser'
         self.__GOOGLE_FINANCE_API = 'www.google.com'
         self.__sym = sym
 
